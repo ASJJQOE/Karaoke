@@ -1,84 +1,99 @@
 import os
+import sys
 import time
-import pygame
 import yt_dlp
 import syncedlyrics
+import pygame
 
-# Colores de consola
-CYAN = "\033[96m"
-AMARILLO = "\033[93m"
-BLANCO = "\033[37m"
-
-def obtener_letras(cancion):
-    print(f"{CYAN}Buscando letras sincronizadas...{BLANCO}")
-    lrc = syncedlyrics.search(cancion)
-    if not lrc:
-        return None
-    
-    # Procesar formato [min:seg.ms]
-    lineas = []
-    for linea in lrc.split('\n'):
-        if linea.startswith('[') and ']' in linea:
-            try:
-                tiempo_str, texto = linea.split(']', 1)
-                m, s = tiempo_str[1:].split(':')
-                segundos = int(m) * 60 + float(s)
-                if texto.strip():
-                    lineas.append((segundos, texto.strip()))
-            except:
-                pass
-    return lineas
+def limpiar_pantalla():
+    os.system('cls' if os.name == 'nt' else 'clear')
 
 def reproducir_magia(cancion):
-    letras = obtener_letras(cancion)
-    if not letras:
-        print("No se encontraron letras exactas para sincronizar.")
+    print("\nBuscando letras sincronizadas...")
+    letra_lrc = syncedlyrics.search(cancion)
+    
+    if not letra_lrc:
+        print("No se encontraron letras sincronizadas, pero intentaremos reproducir la música.")
+        letra_lrc = "[0] ♪ (Sin letra sincronizada disponible) ♪"
+
+    print("Preparando el audio...")
+    
+    # Opciones de yt-dlp actualizadas para evitar bloqueos de IP en la nube y clientes web
+    ydl_opts = {
+        'format': 'bestaudio/best',
+        'extractor_args': {'youtube': {'player_client': ['android', 'web']}},
+        'postprocessors': [{
+            'key': 'FFmpegExtractAudio',
+            'preferredcodec': 'mp3',
+            'preferredquality': '192',
+        }],
+        'outtmpl': 'cancion_temp.%(ext)s',
+        'quiet': True,
+        'no_warnings': True
+    }
+
+    try:
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            ydl.download([f"ytsearch1:{cancion} karaoke"])
+    except Exception as e:
+        print(f"Error al descargar la canción: {e}")
         return
 
-    print(f"{CYAN}Preparando el audio en la sombra...{BLANCO}")
-    archivo_temp = "audio_temporal"
-    opciones = {
-        'format': 'bestaudio',
-        'outtmpl': f'{archivo_temp}.%(ext)s',
-        'postprocessors': [{'key': 'FFmpegExtractAudio', 'preferredcodec': 'mp3'}],
-        'quiet': True,
-        'noplaylist': True
-    }
-    
-    with yt_dlp.YoutubeDL(opciones) as ydl:
-        ydl.download([f"ytsearch1:{cancion}"])
-        
+    archivo_audio = "cancion_temp.mp3"
+    if not os.path.exists(archivo_audio):
+        print("No se pudo generar el archivo de audio.")
+        return
+
+    # Parsear la letra LRC
+    lineas_parsed = []
+    for linea in letra_lrc.splitlines():
+        if "]" in linea:
+            try:
+                tiempo_str, texto = linea.split("]", 1)
+                tiempo_str = tiempo_str.replace("[", "")
+                partes = tiempo_str.split(":")
+                minutos = float(partes[0])
+                segundos = float(partes[1])
+                tiempo_total = minutos * 60 + segundos
+                lineas_parsed.append((tiempo_total, texto.strip()))
+            except:
+                continue
+
+    # Inicializar reproductor Pygame
     pygame.mixer.init()
-    pygame.mixer.music.load(f"{archivo_temp}.mp3")
+    pygame.mixer.music.load(archivo_audio)
     pygame.mixer.music.play()
     
-    inicio = time.time()
-    print(f"\n{CYAN}--- ¡Música Maestro! ---{AMARILLO}\n")
+    inicio_tiempo = time.time()
+    indice_actual = 0
+
+    limpiar_pantalla()
+    print("=== REPRODUCIENDO KARAOKE ===")
+    print("Presiona Ctrl+C para salir.\n")
+
+    try:
+        while pygame.mixer.music.get_busy():
+            tiempo_actual = time.time() - inicio_tiempo
+            
+            if indice_actual < len(lineas_parsed) and tiempo_actual >= lineas_parsed[indice_actual][0]:
+                print(f"♪ {lineas_parsed[indice_actual][1]}")
+                indice_actual += 1
+            
+            time.sleep(0.1)
+    except KeyboardInterrupt:
+        pygame.mixer.music.stop()
     
-    for i, (tiempo, texto) in enumerate(letras):
-        espera = tiempo - (time.time() - inicio)
-        if espera > 0:
-            time.sleep(espera)
-            
-        # Calcular velocidad para el efecto de máquina de escribir
-        duracion = 2.0
-        if i < len(letras) - 1:
-            duracion = letras[i+1][0] - tiempo
-            
-        tiempo_por_letra = (duracion * 0.7) / max(len(texto), 1)
-        
-        for letra in texto:
-            print(letra, end="", flush=True)
-            time.sleep(max(tiempo_por_letra, 0.02)) # Límite de velocidad
-        print()
-        
-    while pygame.mixer.music.get_busy():
-        time.sleep(1)
-        
-    pygame.mixer.quit()
-    os.remove(f"{archivo_temp}.mp3")
-    print(f"\n{BLANCO}Limpieza completada. No quedó rastro.")
+    # Limpiar archivo temporal
+    if os.path.exists(archivo_audio):
+        os.remove(archivo_audio)
+    print("\n¡Fin de la canción!")
 
 if __name__ == "__main__":
+    limpiar_pantalla()
+    print("=== KARAOKE PORTÁTIL ===")
     tema = input("Escribe la canción y el artista: ")
-    reproducir_magia(tema)
+    if tema.strip():
+        reproducir_magia(tema)
+    else:
+        print("No ingresaste ninguna canción.")
+        
