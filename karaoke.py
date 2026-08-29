@@ -1,12 +1,36 @@
 import os
 import sys
 import time
+import urllib.request
+import json
 import yt_dlp
 import syncedlyrics
 import pygame
 
 def limpiar_pantalla():
     os.system('cls' if os.name == 'nt' else 'clear')
+
+def buscar_audio_alternativo(query):
+    """Busca el video usando la API pública de Piped para evitar el bloqueo de YouTube en la nube"""
+    print("Buscando pista de audio alternativa...")
+    url_api = f"https://pipedapi.kavin.rocks/search?q={urllib.parse.quote(query + ' karaoke')}&filter=videos"
+    
+    req = urllib.request.Request(
+        url_api,
+        headers={'User-Agent': 'Mozilla/5.0'}
+    )
+    
+    try:
+        with urllib.request.urlopen(req) as response:
+            data = json.loads(response.read().decode())
+            if 'items' in data and len(data['items']) > 0:
+                # Extrae el ID del video del primer resultado
+                video_url = "https://www.youtube.com" + data['items'][0]['url']
+                return video_url
+    except Exception as e:
+        print(f"Error en la búsqueda alternativa: {e}")
+    
+    return None
 
 def reproducir_magia(cancion):
     print("\nBuscando letras sincronizadas...")
@@ -16,12 +40,16 @@ def reproducir_magia(cancion):
         print("No se encontraron letras sincronizadas, pero intentaremos reproducir la música.")
         letra_lrc = "[0] ♪ (Sin letra sincronizada disponible) ♪"
 
+    # Obtener enlace mediante API pública en lugar de búsqueda directa bloqueada
+    video_url = buscar_audio_alternativo(cancion)
+    if not video_url:
+        print("No se pudo encontrar un enlace de audio válido.")
+        return
+
     print("Preparando el audio...")
     
-    # Usamos el cliente 'ios' o 'tv_embedded' para evitar el bloqueo de bot en la nube
     ydl_opts = {
         'format': 'bestaudio/best',
-        'extractor_args': {'youtube': {'player_client': ['ios']}},
         'postprocessors': [{
             'key': 'FFmpegExtractAudio',
             'preferredcodec': 'mp3',
@@ -34,7 +62,7 @@ def reproducir_magia(cancion):
 
     try:
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            ydl.download([f"ytsearch1:{cancion} karaoke"])
+            ydl.download([video_url])
     except Exception as e:
         print(f"Error al descargar la canción: {e}")
         return
