@@ -18,10 +18,10 @@ def reproducir_magia(cancion):
 
     print("Preparando el audio...")
     
-    # Opciones de yt-dlp actualizadas para evitar bloqueos de IP en la nube y clientes web
+    # Usamos el cliente 'ios' o 'tv_embedded' para evitar el bloqueo de bot en la nube
     ydl_opts = {
         'format': 'bestaudio/best',
-        'extractor_args': {'youtube': {'player_client': ['android', 'web']}},
+        'extractor_args': {'youtube': {'player_client': ['ios']}},
         'postprocessors': [{
             'key': 'FFmpegExtractAudio',
             'preferredcodec': 'mp3',
