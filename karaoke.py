@@ -3,16 +3,14 @@ import sys
 import time
 import urllib.request
 import json
-import yt_dlp
 import syncedlyrics
 import pygame
 
 def limpiar_pantalla():
     os.system('cls' if os.name == 'nt' else 'clear')
 
-def buscar_audio_alternativo(query):
-    """Busca el video usando la API pública de Piped para evitar el bloqueo de YouTube en la nube"""
-    print("Buscando pista de audio alternativa...")
+def descargar_audio_directo(query):
+    print("Buscando pista de audio...")
     url_api = f"https://pipedapi.kavin.rocks/search?q={urllib.parse.quote(query + ' karaoke')}&filter=videos"
     
     req = urllib.request.Request(
@@ -24,13 +22,29 @@ def buscar_audio_alternativo(query):
         with urllib.request.urlopen(req) as response:
             data = json.loads(response.read().decode())
             if 'items' in data and len(data['items']) > 0:
-                # Extrae el ID del video del primer resultado
-                video_url = "https://www.youtube.com" + data['items'][0]['url']
-                return video_url
+                # Obtenemos el ID del video de Piped
+                video_id = data['items'][0]['url'].split("v=")[1]
+                
+                # Consultamos los detalles del video en Piped para obtener el enlace de audio directo
+                url_streams = f"https://pipedapi.kavin.rocks/streams/{video_id}"
+                req_stream = urllib.request.Request(url_streams, headers={'User-Agent': 'Mozilla/5.0'})
+                
+                with urllib.request.urlopen(req_stream) as resp_stream:
+                    stream_data = json.loads(resp_stream.read().decode())
+                    audio_streams = [s for s in stream_data.get('audioStreams', []) if s.get('mimeType', '').startswith('audio/')]
+                    
+                    if audio_streams:
+                        # Tomamos el primer stream de audio disponible
+                        audio_url = audio_streams[0]['url']
+                        print("Descargando audio...")
+                        
+                        # Descargar el archivo directamente sin yt-dlp
+                        urllib.request.urlretrieve(audio_url, 'cancion_temp.mp3')
+                        return True
     except Exception as e:
-        print(f"Error en la búsqueda alternativa: {e}")
+        print(f"Error al obtener el audio: {e}")
     
-    return None
+    return False
 
 def reproducir_magia(cancion):
     print("\nBuscando letras sincronizadas...")
@@ -40,31 +54,8 @@ def reproducir_magia(cancion):
         print("No se encontraron letras sincronizadas, pero intentaremos reproducir la música.")
         letra_lrc = "[0] ♪ (Sin letra sincronizada disponible) ♪"
 
-    # Obtener enlace mediante API pública en lugar de búsqueda directa bloqueada
-    video_url = buscar_audio_alternativo(cancion)
-    if not video_url:
-        print("No se pudo encontrar un enlace de audio válido.")
-        return
-
-    print("Preparando el audio...")
-    
-    ydl_opts = {
-        'format': 'bestaudio/best',
-        'postprocessors': [{
-            'key': 'FFmpegExtractAudio',
-            'preferredcodec': 'mp3',
-            'preferredquality': '192',
-        }],
-        'outtmpl': 'cancion_temp.%(ext)s',
-        'quiet': True,
-        'no_warnings': True
-    }
-
-    try:
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            ydl.download([video_url])
-    except Exception as e:
-        print(f"Error al descargar la canción: {e}")
+    if not descargar_audio_directo(cancion):
+        print("No se pudo descargar el audio de la canción.")
         return
 
     archivo_audio = "cancion_temp.mp3"
